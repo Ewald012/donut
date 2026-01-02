@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Donut SMP – Profi Spawner Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:'Arial',sans-serif;}
+body{background:#0b1220;color:#e5e7eb;}
+h1{text-align:center;padding:20px;font-size:2em;color:#38bdf8;}
+.panel, .addbox{background:#111827;margin:10px auto;padding:12px;max-width:1100px;border-radius:16px;display:flex;flex-wrap:wrap;gap:10px;justify-content:center;align-items:center;}
+.panel input,.addbox input,select,button{padding:7px;border-radius:8px;border:none;font-size:14px;}
+button{cursor:pointer;transition:.2s;}
+button:hover{opacity:.8;}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:18px;padding:15px;max-width:1200px;margin:auto;}
+.card{background:#1a1a3b;border-radius:18px;padding:10px;box-shadow:0 10px 30px rgba(0,0,0,.7);transition:.3s;position:relative;text-align:center;cursor:pointer;}
+.card:hover{transform:translateY(-5px) scale(1.04);}
+.card img{width:60px;height:60px;object-fit:contain;margin-bottom:5px;}
+.card h3{margin:5px 0 2px;color:#38bdf8;font-size:14px;}
+.card p{margin:2px 0;font-size:12px;color:#c7d2fe;}
+.badge{position:absolute;top:5px;left:5px;padding:3px 6px;border-radius:8px;font-size:10px;font-weight:bold;}
+.good{background:#16a34a;color:#022c22;}
+.mid{background:#facc15;color:#422006;}
+.bad{background:#dc2626;color:#450a0a;}
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.9);justify-content:center;align-items:center;}
+.modal-content{background:#0b1220;border-radius:20px;padding:20px;width:90%;max-width:900px;text-align:center;}
+.close{float:right;cursor:pointer;font-size:24px;color:#f87171;}
+.footer{text-align:center;font-size:12px;color:#94a3b8;padding:15px;}
+</style>
+</head>
+<body>
+
+<h1>🍩 Donut SMP – Profi Spawner Dashboard Hybrid</h1>
+
+<div class="panel">
+💰 Budget: <input id="budget" type="number" value="5000000">
+<button onclick="autoInvest()">Auto-Invest</button>
+Sortieren: 
+<select id="sort" onchange="render()">
+  <option value="roi">ROI</option>
+  <option value="profit">Gewinn/Stunde</option>
+  <option value="price">Preis</option>
+</select>
+<button onclick="resetAll()">Reset</button>
+</div>
+
+<div class="addbox">
+<button onclick="addSpawner()">➕ Neuer Spawner hinzufügen</button>
+<button onclick="fetchLivePrices()">🔄 Live-Preise aktualisieren</button>
+</div>
+
+<div class="grid" id="grid"></div>
+
+<div class="modal" id="modal">
+  <div class="modal-content">
+    <span class="close" onclick="closeModal()">✖</span>
+    <h2 id="modalTitle"></h2>
+    <p id="modalStats"></p>
+    <canvas id="chart"></canvas>
+  </div>
+</div>
+
+<div class="footer">
+Alle echten Donut SMP Spawner • Profi Design • Charts • Offline + Hybrid Live-Preis
+</div>
+
+<script>
+let spawners = JSON.parse(localStorage.getItem("spawners")) || [
+  {name:"Skeleton",price:1239181,items:240,itemPrice:577,icon:"https://i.imgur.com/dBqYH1i.png"},
+  {name:"Creeper",price:850000,items:234,itemPrice:8000,icon:"https://i.imgur.com/iTqrB9o.png"},
+  {name:"Iron Golem",price:1632500,items:118,itemPrice:24000,icon:"https://i.imgur.com/fFW6q8e.png"},
+  {name:"Blaze",price:775000,items:50,itemPrice:1000,icon:"https://i.imgur.com/2G1Rnqv.png"},
+  {name:"Cow",price:906250,items:30,itemPrice:2500,icon:"https://i.imgur.com/lKLwC3u.png"},
+  {name:"Spider",price:513265,items:35,itemPrice:2500,icon:"https://i.imgur.com/VCwDCqO.png"},
+  {name:"Zombie Piglin",price:966667,items:45,itemPrice:3000,icon:"https://i.imgur.com/QwQ8U3p.png"}
+];
+
+let chart;
+function save(){localStorage.setItem("spawners",JSON.stringify(spawners))}
+function roi(s){return s.items*s.itemPrice>0 ? s.price/(s.items*s.itemPrice) : Infinity;}
+function profit(s){return s.items*s.itemPrice;}
+
+function render(){
+  let list=[...spawners];
+  const sort=document.getElementById("sort").value;
+  if(sort==="roi") list.sort((a,b)=>roi(a)-roi(b));
+  if(sort==="profit") list.sort((a,b)=>profit(b)-profit(a));
+  if(sort==="price") list.sort((a,b)=>a.price-b.price);
+
+  const grid=document.getElementById("grid");
+  grid.innerHTML="";
+  list.forEach((s,i)=>{
+    const r=roi(s);
+    const cls=r<5?"good":r<10?"mid":"bad";
+    const card=document.createElement("div");
+    card.className="card";
+    card.innerHTML=`
+      <span class="badge ${cls}">${i+1}</span>
+      <img src="${s.icon}" alt="${s.name}">
+      <h3>${s.name}</h3>
+      <p>Preis: ${s.price.toLocaleString()} $</p>
+      <p>Items/Stunde: ${s.items}</p>
+      <p>Item Preis: ${s.itemPrice}</p>
+      <p>Gewinn/Std: ${profit(s).toLocaleString()} $</p>
+      <p>ROI: ${r.toFixed(2)} Std</p>
+    `;
+    card.addEventListener("mouseenter",()=>showTooltip(s,card));
+    card.addEventListener("click",()=>openModal(i));
+    grid.appendChild(card);
+  });
+  save();
+}
+
+let tooltip;
+function showTooltip(s, el){
+  if(tooltip) tooltip.remove();
+  tooltip=document.createElement("div");
+  tooltip.style.position="absolute";
+  tooltip.style.background="#111827";
+  tooltip.style.color="#fff";
+  tooltip.style.padding="6px 10px";
+  tooltip.style.borderRadius="8px";
+  const rect=el.getBoundingClientRect();
+  tooltip.style.top=(rect.top-50+window.scrollY)+"px";
+  tooltip.style.left=(rect.left+window.scrollX)+"px";
+  tooltip.innerHTML=`<b>${s.name}</b><br>Gewinn/Std: ${(s.items*s.itemPrice).toLocaleString()} $<br>ROI: ${roi(s).toFixed(2)} Std`;
+  document.body.appendChild(tooltip);
+  el.addEventListener("mouseleave",()=>{tooltip.remove(); tooltip=null;});
+}
+
+function openModal(i){
+  const s=spawners[i];
+  document.getElementById("modalTitle").innerText=s.name;
+  const h=profit(s);
+  document.getElementById("modalStats").innerText=
+    `Einnahmen/Stunde: ${h.toLocaleString()} $ | Einnahmen/Tag: ${(h*24).toLocaleString()} $ | ROI: ${roi(s).toFixed(2)} Std`;
+  const ctx=document.getElementById("chart");
+  const hours=[...Array(49).keys()];
+  const data=hours.map(x=>x*h);
+  if(chart) chart.destroy();
+  chart=new Chart(ctx,{
+    type:'line',
+    data:{labels:hours,datasets:[{label:"Einnahmen über Stunden",data,borderWidth:3,borderColor:'#38bdf8',backgroundColor:'rgba(56,221,248,0.3)'}]},
+    options:{plugins:{legend:{display:false}}}
+  });
+  document.getElementById("modal").style.display="flex";
+}
+function closeModal(){document.getElementById("modal").style.display="none";}
+
+function addSpawner(){
+  const n=prompt("Spawner Name:");
+  const p=+prompt("Spawner Preis:");
+  const i=+prompt("Items/Stunde:");
+  const ip=+prompt("Item Preis:");
+  const ic=prompt("Icon URL:");
+  if(!n||!p||!i){alert("Ungültige Eingabe");return;}
+  spawners.push({name:n,price:p,items:i,itemPrice:ip,icon:ic||"https://i.imgur.com/dBqYH1i.png"});
+  render();
+}
+
+function autoInvest(){
+  let budget=+document.getElementById("budget").value;
+  let plan=[];
+  let sorted=[...spawners].sort((a,b)=>roi(a)-roi(b));
+  sorted.forEach(s=>{
+    const count=Math.floor(budget/s.price);
+    if(count>0){
+      plan.push(`${count}x ${s.name}`);
+      budget-=count*s.price;
+    }
+  });
+  alert("Beste Investition:\n"+plan.join("\n")+"\nRest: "+budget.toLocaleString()+" $");
+}
+
+function resetAll(){if(confirm("Alles löschen?")){localStorage.clear(); location.reload();}}
+
+// ===== LIVE PREISE =====
+async function fetchLivePrices(){
+  try {
+    const res = await fetch("http://localhost:3000/api/prices");
+    const data = await res.json();
+    spawners.forEach(s => {if(data[s.name]) s.price = data[s.name];});
+    alert("Live-Preise aktualisiert!");
+    render();
+  } catch(e){console.error(e); alert("Fehler beim Abrufen der Live-Preise.");}
+}
+
+render();
+</script>
+
+</body>
+</html>
